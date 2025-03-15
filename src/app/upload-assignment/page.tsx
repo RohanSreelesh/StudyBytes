@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import FileUpload from '@/components/FileUpload';
 import Link from 'next/link';
@@ -10,6 +10,12 @@ export default function UploadAssignment() {
   const [assignmentFiles, setAssignmentFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+  // Clear any existing stored files on component mount
+  useEffect(() => {
+    sessionStorage.removeItem('assignmentFiles');
+    sessionStorage.removeItem('generatedVideos');
+  }, []);
 
   const handleFileAccepted = (files: File[]) => {
     setAssignmentFiles(files);
@@ -27,15 +33,24 @@ export default function UploadAssignment() {
     setIsUploading(true);
     
     try {
-      // In a real app, you would upload the files to your backend here
-      // For now, we'll just simulate a delay and redirect to the next page
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Store files in session storage for later use
+      // Since we can't store File objects directly, store metadata
+      const fileInfoArray = assignmentFiles.map(file => ({
+        name: file.name,
+        type: file.type,
+        size: file.size,
+      }));
+      
+      sessionStorage.setItem('assignmentFiles', JSON.stringify(fileInfoArray));
+      
+      // Simulate a brief delay for better UX
+      await new Promise(resolve => setTimeout(resolve, 500));
       
       // Navigate to the learning materials upload page
       router.push('/upload-materials');
     } catch (error) {
-      console.error('Error uploading assignment:', error);
-      setErrorMessage('Failed to upload assignment. Please try again.');
+      console.error('Error storing assignment files:', error);
+      setErrorMessage('Failed to process files. Please try again.');
     } finally {
       setIsUploading(false);
     }

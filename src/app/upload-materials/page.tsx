@@ -1,15 +1,38 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import FileUpload from '@/components/FileUpload';
 import Link from 'next/link';
+import { processFiles, checkAPIHealth } from '@/lib/api';
 
 export default function UploadMaterials() {
   const router = useRouter();
   const [materialFiles, setMaterialFiles] = useState<File[]>([]);
   const [isUploading, setIsUploading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [apiAvailable, setApiAvailable] = useState(true);
+
+  // Get assignment files from session storage
+  const assignmentFiles = JSON.parse(sessionStorage.getItem('assignmentFiles') || '[]')
+    .map((fileInfo: any) => {
+      const file = new File([], fileInfo.name, { type: fileInfo.type });
+      Object.defineProperty(file, 'size', { value: fileInfo.size });
+      return file;
+    });
+
+  useEffect(() => {
+    // Check if API is available
+    const checkAPI = async () => {
+      const isHealthy = await checkAPIHealth();
+      setApiAvailable(isHealthy);
+      if (!isHealthy) {
+        setErrorMessage('Backend API is not available. Please try again later or contact support.');
+      }
+    };
+    
+    checkAPI();
+  }, []);
 
   const handleFileAccepted = (files: File[]) => {
     setMaterialFiles(prev => [...prev, ...files]);
@@ -23,24 +46,26 @@ export default function UploadMaterials() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Materials are optional, so we don't need to check if files were uploaded
+    if (!apiAvailable) {
+      setErrorMessage('Backend API is not available. Please try again later or contact support.');
+      return;
+    }
     
     setIsUploading(true);
     
     try {
-      // In a real app, you would upload the files to your backend here
-      // For now, we'll just simulate a delay and redirect to a success page
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // In a real implementation, we would use the actual files here
+      // For demo purposes, we're using empty files with the same names
+      const videos = await processFiles(assignmentFiles, materialFiles);
       
-      // In a real app, you would call your backend API to process the files here
-      // For now, we'll just simulate a success and show a processing message
-      alert('Your materials have been uploaded successfully! Your personalized video will be generated soon.');
+      // Store videos in session storage to display on results page
+      sessionStorage.setItem('generatedVideos', JSON.stringify(videos));
       
-      // Navigate back to home
-      router.push('/');
+      // Navigate to results page
+      router.push('/results');
     } catch (error) {
-      console.error('Error uploading materials:', error);
-      setErrorMessage('Failed to upload materials. Please try again.');
+      console.error('Error processing files:', error);
+      setErrorMessage('Failed to process files. Please try again or contact support.');
     } finally {
       setIsUploading(false);
     }
@@ -100,10 +125,10 @@ export default function UploadMaterials() {
           
           <button
             type="submit"
-            disabled={isUploading}
-            className={`px-6 py-3 bg-primary text-white rounded-md transition-all ${isUploading ? 'opacity-70 cursor-not-allowed' : 'hover:bg-opacity-90'}`}
+            disabled={isUploading || !apiAvailable}
+            className={`px-6 py-3 bg-primary text-white rounded-md transition-all ${(isUploading || !apiAvailable) ? 'opacity-70 cursor-not-allowed' : 'hover:bg-opacity-90'}`}
           >
-            {isUploading ? 'Processing...' : materialFiles.length > 0 ? 'Generate My Video' : 'Skip & Generate Video'}
+            {isUploading ? 'Processing...' : materialFiles.length > 0 ? 'Generate My Videos' : 'Skip & Generate Videos'}
           </button>
         </div>
       </form>
