@@ -52,16 +52,16 @@ export default function Results() {
           </div>
           <h1 className="text-2xl font-bold text-gray-800 dark:text-white mb-3">No Videos Found</h1>
           <p className="text-gray-600 dark:text-gray-300 mb-8">
-            We couldn't find any generated videos. Please try uploading your assignment to get personalized educational content.
+            We couldn't find any generated videos. Please try uploading your learning materials to get personalized educational content.
           </p>
           <Link
-            href="/upload-assignment"
+            href="/upload-materials"
             className="inline-flex items-center px-6 py-3 bg-primary text-white rounded-full font-medium shadow-md hover:bg-opacity-90 hover:shadow-lg transform hover:scale-105 transition-all duration-300"
           >
             <svg className="w-5 h-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
             </svg>
-            Create New Videos
+            Upload Learning Materials
           </Link>
         </div>
       </div>
@@ -83,18 +83,18 @@ export default function Results() {
                 <div className="mb-4 sm:mb-0">
                   <h1 className="text-3xl font-bold text-gray-800 dark:text-white">Your Learning Videos</h1>
                   <p className="text-gray-600 dark:text-gray-300 mt-2">
-                    {videos.length} personalized educational {videos.length === 1 ? 'video' : 'videos'} based on your assignment
+                    {videos.length} personalized educational {videos.length === 1 ? 'video' : 'videos'} based on your materials
                   </p>
                 </div>
                 <div className="flex gap-3">
                   <Link
-                    href="/upload-assignment"
+                    href="/upload-materials"
                     className="flex items-center px-4 py-2 bg-primary text-white rounded-md hover:bg-opacity-90 transition-all text-sm"
                   >
                     <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
-                    New Assignment
+                    Upload New Materials
                   </Link>
                   {videos.length > 0 && (
                     <Link

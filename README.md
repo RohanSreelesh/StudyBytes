@@ -1,16 +1,16 @@
 # CU Brainrot Assistant
 
-An AI-powered platform that converts complex academic assignments into engaging, short-form educational videos tailored to each student's learning needs.
+An AI-powered platform that transforms learning materials into engaging, short-form educational videos tailored to each student's learning style.
 
 ## Features
 
-- Upload academic assignments in various formats (PDF, DOC, DOCX, TXT)
-- Upload supplementary learning materials (slides, notes, textbook pages)
+- Upload learning materials in various formats (PDF, PPT, PPTX, DOC, DOCX, TXT, JPG, PNG)
 - AI processing to generate personalized educational videos
 - Short-form video player with swipe navigation (optimized for 3:4 aspect ratio)
 - Video preview on hover and intuitive touch controls
 - Responsive design optimized for both desktop and mobile
 - Dark mode support
+- Modern, intuitive user interface
 
 ## Getting Started
 

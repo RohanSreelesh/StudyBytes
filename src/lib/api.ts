@@ -3,23 +3,18 @@ import { Video } from './types';
 const API_URL = 'http://localhost:8000/api';
 
 export async function processFiles(
-  assignmentFiles: File[],
+  assignmentFiles: File[] = [],
   materialFiles: File[] = []
 ): Promise<Video[]> {
   const formData = new FormData();
   
-  // Add assignment files
-  assignmentFiles.forEach((file) => {
-    formData.append('assignment_files', file);
-  });
-  
-  // Add material files if any
+  // Add material files
   materialFiles.forEach((file) => {
     formData.append('material_files', file);
   });
   
   try {
-    const response = await fetch(`${API_URL}/process`, {
+    const response = await fetch(`${API_URL}/process-materials`, {
       method: 'POST',
       body: formData,
     });

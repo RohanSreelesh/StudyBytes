@@ -1,7 +1,7 @@
 # CU Brainrot Assistant Project Guidelines
 
 ## Project Overview
-AI-powered platform converting academic assignments into engaging, short-form educational videos tailored to students' learning needs.
+AI-powered platform converting learning materials into engaging, short-form educational videos tailored to students' learning needs.
 
 ## Commands
 - **Setup**: `npm install` or `yarn install`

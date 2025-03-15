@@ -91,21 +91,11 @@ def process_files(assignment_files, material_files):
     
     return videos
 
-@app.post("/api/process", response_model=List[Video])
-async def process_uploaded_files(
-    assignment_files: List[UploadFile] = File(...),
-    material_files: List[UploadFile] = File([]) 
+@app.post("/api/process-materials", response_model=List[Video])
+async def process_materials(
+    material_files: List[UploadFile] = File(...)
 ):
-    # Save assignment files
-    saved_assignment_files = []
-    for file in assignment_files:
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        saved_assignment_files.append(file_path)
-    
-    # Save material files if any
+    # Save material files
     saved_material_files = []
     for file in material_files:
         file_path = os.path.join(UPLOAD_DIR, file.filename)
@@ -115,7 +105,7 @@ async def process_uploaded_files(
         saved_material_files.append(file_path)
     
     # Process the files (in a real app, this would be done asynchronously)
-    videos = process_files(saved_assignment_files, saved_material_files)
+    videos = process_files([], saved_material_files)
     
     return videos
 
