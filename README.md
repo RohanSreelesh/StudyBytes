@@ -7,7 +7,10 @@ An AI-powered platform that converts complex academic assignments into engaging,
 - Upload academic assignments in various formats (PDF, DOC, DOCX, TXT)
 - Upload supplementary learning materials (slides, notes, textbook pages)
 - AI processing to generate personalized educational videos
-- User-friendly interface with responsive design
+- Short-form video player with swipe navigation (optimized for 3:4 aspect ratio)
+- Video preview on hover and intuitive touch controls
+- Responsive design optimized for both desktop and mobile
+- Dark mode support
 
 ## Getting Started
 
@@ -69,6 +72,25 @@ yarn backend
 
 4. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
+### Adding Sample Videos
+
+To test the video player functionality:
+
+1. Obtain sample MP4 video files
+2. Place them in the `backend/processed_videos` directory
+3. Start the backend server
+4. The videos will be automatically detected and available in the application
+
+Sample videos can be obtained from:
+- https://samplelib.com/sample-mp4.html
+- https://sample-videos.com/
+
+Example command to download a sample video:
+```bash
+# Download a sample video to the processed_videos directory
+curl -o backend/processed_videos/sample_video.mp4 https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4
+```
+
 ## Tech Stack
 
 - **Frontend**:
@@ -98,6 +120,8 @@ yarn backend
 - `POST /api/process`: Process uploaded files and generate videos
   - Accepts assignment files and optional learning materials
   - Returns an array of generated videos
+- `GET /api/videos`: Get list of all available processed videos
+- `/videos/*`: Static file serving for processed video files
 
 ## License
 
