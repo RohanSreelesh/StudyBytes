@@ -41,7 +41,7 @@ export default function UploadAssignment() {
         size: file.size,
       }));
       
-      sessionStorage.setItem('assignmentFiles', JSON.stringify(fileInfoArray));
+      
       
       // Simulate a brief delay for better UX
       await new Promise(resolve => setTimeout(resolve, 500));
