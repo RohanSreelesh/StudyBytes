@@ -14,12 +14,28 @@ import json
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 
+from fastapi.responses import StreamingResponse
+from elevenlabs.client import ElevenLabs
+from elevenlabs import play
+import io
 
 # Load environment variables from .env file
 load_dotenv()
 
 app = FastAPI(title="CU Brainrot Assistant API")
 
+# Set ElevenLabs API key
+api_key = os.getenv("ELEVENLABS_API_KEY")
+voice_id = os.getenv("VOICE_ID")
+
+if not api_key:
+    raise ValueError("Missing ELEVENLABS_API_KEY in .env file")
+    
+if not voice_id:
+    raise ValueError("Missing VOICE_ID in .env file")
+
+# Initialize ElevenLabs client
+client = ElevenLabs(api_key=api_key)
 
 # Enable CORS
 app.add_middleware(
@@ -33,6 +49,10 @@ app.add_middleware(
 # Directory to save uploaded files
 UPLOAD_DIR = "backend/uploads"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Directory to save mp3 files
+MP3_DIR = "backend/mp3s"
+os.makedirs(MP3_DIR, exist_ok=True)
 
 # Directory for processed videos
 PROCESSED_VIDEOS_DIR = "backend/processed_videos"
@@ -251,6 +271,17 @@ async def process_materials(
     
     # Process the files
     transcripts = process_files_with_gemini(UPLOAD_DIR)
+
+    # use the text_to_speech function, modify it if needed, and output one mp3 file for every transcript in the transcripts json
+    
+    for concept in transcripts:
+        print("transcripts:", transcripts)
+        request = TextToSpeechRequest({'text': concept["transcript"]})
+        audio_stream = text_to_speech(request)
+        audio_path = os.path.join(MP3_DIR, f"{concept}.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(audio_stream.read())
+
     videos = process_files([], saved_material_files)
     
     return videos
@@ -277,6 +308,37 @@ def get_video_duration(video_path):
     except Exception as e:
         print(f"Error getting duration for {video_path}: {e}")
         return 60  # fallback duration
+
+# voicetts.py
+
+class TextToSpeechRequest(BaseModel):
+    text: str
+
+def text_to_speech(request: TextToSpeechRequest):
+    try:
+        # Generate audio from text
+        audio_generator = client.text_to_speech.convert(
+            text=request.text,
+            voice_id=voice_id,
+            model_id="eleven_flash_v2_5",
+            output_format="mp3_44100_128",
+            voice_settings={"speed": 0.7, "stability": 0.45, "similarity_boost": 0.5}
+        )
+        
+        # Convert generator to bytes
+        audio_bytes = b"".join(chunk for chunk in audio_generator)
+        
+        # Create a file-like object from the audio bytes
+        audio_stream = io.BytesIO(audio_bytes)
+        
+        # Return the audio as a streaming response
+        return StreamingResponse(
+            audio_stream, 
+            media_type="audio/mpeg",
+            headers={"Content-Disposition": "attachment; filename=speech.mp3"}
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
