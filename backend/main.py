@@ -125,9 +125,11 @@ def process_files_with_gemini(upload_dir):
     # Create prompt for Gemini with explicit JSON structure for multiple files
     prompt = f"""
     Please analyze all the following files and provide transcripts that explain 
-    the material in each file in an easy-to-understand way.
+    the material in each file in an easy-to-understand way. You should create as many videos as required to explain the material.
+    You are expected to usually create multiple video transcripts per file as there will be many concepts to explain.
+    Each video should focus on a specific concept or topic from the material end to end with detailed examples.
 
-    Return ONLY a valid JSON object with the following structure - do not include any markdown formatting, explanations, or code blocks:
+    Return ONLY a valid JSON object with the following structure - do not include any markdown formatting, explanations, or code blocks, follow the exact structure:
 
     {{
         "transcripts": [
@@ -149,7 +151,7 @@ def process_files_with_gemini(upload_dir):
     # Call Gemini API once for all files
     try:
         print("Sending all files to Gemini API...")
-        model = genai.GenerativeModel('gemini-2.0-flash')
+        model = genai.GenerativeModel('gemini-1.5-pro')
         response = model.generate_content(prompt)
         
         # Parse JSON response
@@ -251,6 +253,7 @@ async def process_materials(
     
     # Process the files
     transcripts = process_files_with_gemini(UPLOAD_DIR)
+    print(transcripts)
     videos = process_files([], saved_material_files)
     
     return videos
