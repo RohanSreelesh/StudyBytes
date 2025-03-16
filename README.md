@@ -1,3 +1,31 @@
+# How to run the project
+
+fastpi:
+
+cd fastapi
+
+python install -r requirements.txt
+
+python main.py
+
+python test.py
+
+backend:
+
+cd fastapi
+
+python install -r requirements.txt
+
+python main.py
+
+src:
+
+cd src
+
+npm i
+
+npm run
+
 # CU Brainrot Assistant
 
 An AI-powered platform that transforms learning materials into engaging, short-form educational videos tailored to each student's learning style.
