@@ -374,7 +374,7 @@ import re
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
-load_dotenv()
+# load_dotenv()
 
 # Default directories (can be overridden when calling process_files)
 DEFAULT_AUDIO_DIR = "./backend/mp3s"     # Directory containing MP3 files

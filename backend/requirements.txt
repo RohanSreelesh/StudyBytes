@@ -6,3 +6,5 @@ aiofiles==23.1.0  # For StaticFiles feature
 moviepy
 google-generativeai
 PyPDF2
+openai
+moviepy
