@@ -5,7 +5,7 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'CU Brainrot Assistant',
+  title: 'StudyBytes',
   description: 'Convert academic assignments into engaging educational videos',
 };
 

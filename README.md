@@ -26,7 +26,7 @@ npm i
 
 npm run
 
-# CU Brainrot Assistant
+# StudyBytes
 
 An AI-powered platform that transforms learning materials into engaging, short-form educational videos tailored to each student's learning style.
 

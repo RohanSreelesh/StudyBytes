@@ -23,7 +23,7 @@ import io
 # Load environment variables from .env file
 load_dotenv()
 
-app = FastAPI(title="CU Brainrot Assistant API")
+app = FastAPI(title="StudyBytes API")
 
 # Set ElevenLabs API key
 api_key = os.getenv("ELEVENLABS_API_KEY")
@@ -75,6 +75,7 @@ class Video(BaseModel):
     duration: int  # in seconds
     description: str = ""
 
+print("gemeni key:",os.getenv("GEMENI_API_KEY"))
 genai.configure(api_key=os.getenv("GEMENI_API_KEY"))
 
 def process_files_with_gemini(upload_dir, max_retries=3):
@@ -158,7 +159,7 @@ def process_files_with_gemini(upload_dir, max_retries=3):
                 Please analyze all the following files and provide transcripts that explain 
                 the material in each file in an easy-to-understand way. You should create as many videos as required to explain the important concepts in the material.
                 You are expected to usually create multiple video transcripts per file as there will be many concepts to explain.
-                Each video should focus on a specific concept or topic, being concise and clear. The transcripts are for short form video content.
+                Each video should focus on a specific concept or topic. The transcripts are for short form video content usually ranging around 30 seconds to a minute.
 
                 Return ONLY a valid JSON object with the following structure - do not include any markdown formatting, explanations, or code blocks, follow the exact structure:
 
@@ -179,6 +180,8 @@ def process_files_with_gemini(upload_dir, max_retries=3):
                 Files to analyze:{files_content}
                 """
             else:
+                #sleep
+                time.sleep(2)
                 # Modified prompt for retry attempts - emphasizing JSON formatting more strongly
                 prompt = f"""
                 IMPORTANT: Your response MUST be a valid JSON object and NOTHING ELSE. No markdown, no explanations, no code blocks.

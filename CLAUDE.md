@@ -1,4 +1,4 @@
-# CU Brainrot Assistant Project Guidelines
+# StudyBytes Project Guidelines
 
 ## Project Overview
 AI-powered platform converting learning materials into engaging, short-form educational videos tailored to students' learning needs.
