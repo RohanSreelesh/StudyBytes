@@ -6,3 +6,11 @@ export interface Video {
   duration: number; // in seconds
   description?: string;
 }
+
+export interface ProcessingStatus {
+  processingId: string;
+  progress: number;
+  status: string;
+  complete: boolean;
+  videos?: Video[];
+}

@@ -10,16 +10,19 @@ export default function Results() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Try to fetch videos from API first, fall back to session storage
+    // Try to fetch videos from session storage, fall back to API
     const fetchVideos = async () => {
       try {
         // First try to get from session storage for faster load
         const storedVideos = sessionStorage.getItem('generatedVideos');
         
         if (storedVideos) {
-          setVideos(JSON.parse(storedVideos));
-          setLoading(false);
-          return;
+          const parsedVideos = JSON.parse(storedVideos);
+          if (Array.isArray(parsedVideos) && parsedVideos.length > 0) {
+            setVideos(parsedVideos);
+            setLoading(false);
+            return;
+          }
         }
         
         // If no videos in session storage, fetch from API

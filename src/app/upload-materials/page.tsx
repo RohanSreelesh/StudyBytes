@@ -69,18 +69,17 @@ export default function UploadMaterials() {
     setIsUploading(true);
     
     try {
-      // Process the materials and generate videos
-      const videos = await processFiles([], materialFiles);
+      // Start the processing task and get a processing ID
+      const result = await processFiles([], materialFiles);
       
-      // Store videos in session storage to display on results page
-      sessionStorage.setItem('generatedVideos', JSON.stringify(videos));
+      // Store the processing ID in session storage
+      sessionStorage.setItem('processingId', result.processingId);
       
-      // Navigate to results page
-      router.push('/results');
+      // Navigate to processing page to show progress
+      router.push('/processing');
     } catch (error) {
       console.error('Error processing files:', error);
       setErrorMessage('Failed to process files. Please try again or contact support.');
-    } finally {
       setIsUploading(false);
     }
   };

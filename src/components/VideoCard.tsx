@@ -94,33 +94,17 @@ export default function VideoCard({ video, index }: VideoCardProps) {
           <p className="text-gray-600 dark:text-gray-300 text-sm mb-4 line-clamp-2">{video.description}</p>
         )}
         
-        <div className="flex flex-wrap gap-2">
-          <Link 
-            href={`/video-player?index=${index}`}
-            className="flex-1 text-center px-3 py-2 bg-primary text-white text-sm rounded-md hover:bg-primary/90 transition-all"
-          >
-            <span className="flex items-center justify-center">
-              <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-              Short-Form
-            </span>
-          </Link>
-          
-          <a 
-            href={`http://localhost:8000${video.url}`} 
-            target="_blank" 
-            rel="noopener noreferrer"
-            className="flex-1 text-center px-3 py-2 bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 text-sm rounded-md hover:bg-gray-200 dark:hover:bg-gray-600 transition-all"
-          >
-            <span className="flex items-center justify-center">
-              <svg className="w-4 h-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-              </svg>
-              Full Video
-            </span>
-          </a>
-        </div>
+        <Link 
+          href={`/video-player?index=${index}`}
+          className="block w-full text-center px-4 py-2.5 bg-gradient-to-r from-primary to-primary/80 text-white text-sm font-medium rounded-md hover:shadow-md hover:from-primary/90 hover:to-primary/70 transition-all duration-300 transform hover:-translate-y-0.5"
+        >
+          <span className="flex items-center justify-center">
+            <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+            Watch Now
+          </span>
+        </Link>
       </div>
     </div>
   );

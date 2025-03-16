@@ -1,11 +1,11 @@
-import { Video } from './types';
+import { Video, ProcessingStatus } from './types';
 
 const API_URL = 'http://localhost:8000/api';
 
 export async function processFiles(
   assignmentFiles: File[] = [],
   materialFiles: File[] = []
-): Promise<Video[]> {
+): Promise<{ processingId: string }> {
   const formData = new FormData();
   
   // Add material files
@@ -27,6 +27,21 @@ export async function processFiles(
     return await response.json();
   } catch (error) {
     console.error('Error processing files:', error);
+    throw error;
+  }
+}
+
+export async function checkProcessingStatus(processingId: string): Promise<ProcessingStatus> {
+  try {
+    const response = await fetch(`${API_URL}/processing-status/${processingId}`);
+    
+    if (!response.ok) {
+      throw new Error(`Error checking processing status: ${response.status}`);
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Error checking processing status:', error);
     throw error;
   }
 }
