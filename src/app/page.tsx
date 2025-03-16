@@ -6,7 +6,7 @@ export default function Home() {
       <div className="max-w-3xl mx-auto p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl">
         <h1 className="text-4xl font-bold mb-6 text-gray-800 dark:text-white">Welcome to StudyBytes</h1>
         <p className="text-xl mb-8 max-w-2xl text-gray-600 dark:text-gray-300">
-          Transform your learning materials into engaging, short-form educational videos tailored to your learning style.
+          Transform your learning materials into engaging, short-form educational videos.
         </p>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8 text-left">
           <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg border border-blue-100 dark:border-blue-800">
