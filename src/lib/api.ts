@@ -41,3 +41,20 @@ export async function checkAPIHealth(): Promise<boolean> {
     return false;
   }
 }
+
+export async function cleanupDirectories() {
+  try {
+    const response = await fetch(`${API_URL}/cleanup`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    
+    const data = await response.json();
+    return data.status === 'success';
+  } catch (error) {
+    console.error('Cleanup request failed:', error);
+    return false;
+  }
+}

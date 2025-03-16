@@ -77,13 +77,15 @@ class Video(BaseModel):
 
 genai.configure(api_key=os.getenv("GEMENI_API_KEY"))
 
-def process_files_with_gemini(upload_dir):
+def process_files_with_gemini(upload_dir, max_retries=3):
     """
     Process all files in the upload directory using a single Gemini API call
     and generate easy-to-understand transcripts in JSON format.
+    Will retry on JSON parsing failures.
     
     Args:
         upload_dir (str): Path to the directory containing uploaded files
+        max_retries (int): Maximum number of retry attempts for JSON parsing failures
         
     Returns:
         dict: JSON response containing simplified transcripts
@@ -143,51 +145,90 @@ def process_files_with_gemini(upload_dir):
     for file_name, content in file_contents.items():
         files_content += f"\n\n--- FILE: {file_name} ---\n{content}\n--- END OF FILE: {file_name} ---"
     
-    # Create prompt for Gemini with explicit JSON structure for multiple files
-    prompt = f"""
-    Please analyze all the following files and provide transcripts that explain 
-    the material in each file in an easy-to-understand way. You should create as many videos as required to explain the material.
-    You are expected to usually create multiple video transcripts per file as there will be many concepts to explain.
-    Each video should focus on a specific concept or topic from the material end to end with detailed examples.
-
-    Return ONLY a valid JSON object with the following structure - do not include any markdown formatting, explanations, or code blocks, follow the exact structure:
-
-    {{
-        "transcripts": [
-            {{
-                "Video name": "name_of_video_1",
-                "transcript": "your transcript here...",
-            }},
-            {{
-                "Video name": "name_of_video_2",
-                "transcript": "your transcript here...",
-            }}
-            // Include entries for as many transcripts required to explain the content
-        ],
-    }}
-
-    Files to analyze:{files_content}
-    """
+    # Initialize model
+    model = genai.GenerativeModel('gemini-1.5-pro')
     
-    # Call Gemini API once for all files
-    try:
-        print("Sending all files to Gemini API...")
-        model = genai.GenerativeModel('gemini-1.5-pro')
-        response = model.generate_content(prompt)
-        
-        # Parse JSON response
+    # Retry loop for handling JSON parsing failures
+    for attempt in range(max_retries + 1):  # +1 to include the initial attempt
         try:
+            # Adjust prompt based on retry attempt to emphasize JSON requirements
+            if attempt == 0:
+                # Initial prompt
+                prompt = f"""
+                Please analyze all the following files and provide transcripts that explain 
+                the material in each file in an easy-to-understand way. You should create as many videos as required to explain the important concepts in the material.
+                You are expected to usually create multiple video transcripts per file as there will be many concepts to explain.
+                Each video should focus on a specific concept or topic, being concise and clear. The transcripts are for short form video content.
+
+                Return ONLY a valid JSON object with the following structure - do not include any markdown formatting, explanations, or code blocks, follow the exact structure:
+
+                {{
+                    "transcripts": [
+                        {{
+                            "Video name": "name_of_video_1",
+                            "transcript": "your transcript here...",
+                        }},
+                        {{
+                            "Video name": "name_of_video_2",
+                            "transcript": "your transcript here...",
+                        }}
+                        // Include entries for as many transcripts required to explain the content
+                    ],
+                }}
+
+                Files to analyze:{files_content}
+                """
+            else:
+                # Modified prompt for retry attempts - emphasizing JSON formatting more strongly
+                prompt = f"""
+                IMPORTANT: Your response MUST be a valid JSON object and NOTHING ELSE. No markdown, no explanations, no code blocks.
+                
+                Please analyze these files and create transcripts explaining the material in an easy-to-understand way.
+                Create multiple video transcripts focusing on specific concepts from the material.
+                
+                Your response must EXACTLY follow this JSON structure:
+                
+                {{
+                    "transcripts": [
+                        {{
+                            "Video name": "name_of_video_1",
+                            "transcript": "your transcript here...",
+                        }},
+                        {{
+                            "Video name": "name_of_video_2",
+                            "transcript": "your transcript here...",
+                        }}
+                    ],
+                }}
+                
+                DO NOT include any explanations, comments, or text outside of this exact JSON structure.
+                DO NOT use markdown code blocks or any other formatting.
+
+                Files to analyze:{files_content}
+                """
+            
+            print(f"Attempt {attempt+1}/{max_retries+1}: Sending files to Gemini API...")
+            response = model.generate_content(prompt)
             response_text = response.text
-            # Extract JSON if it's embedded in markdown code block
+            
+            # Extract JSON content with improved handling
+            json_content = response_text
+            
+            # Try to extract if it's in a code block
             if "```json" in response_text:
                 json_content = response_text.split("```json")[1].split("```")[0].strip()
             elif "```" in response_text:
                 json_content = response_text.split("```")[1].strip()
-            else:
-                json_content = response_text
             
+            # Remove any leading/trailing characters that might invalidate JSON
+            json_content = json_content.strip()
+            if json_content.startswith('`') and json_content.endswith('`'):
+                json_content = json_content[1:-1].strip()
+                
+            # Try to parse the JSON
             results = json.loads(json_content)
             
+            # If we got here, JSON parsing succeeded
             # Convert array to dictionary with file_name as key for easier access
             formatted_results = {}
             if "transcripts" in results:
@@ -198,8 +239,8 @@ def process_files_with_gemini(upload_dir):
             # Add the overall theme if it exists
             if "overall_theme" in results:
                 formatted_results["overall_theme"] = results["overall_theme"]
-                
-            print("Successfully processed all files")
+            
+            print(f"Successfully processed all files on attempt {attempt+1}")
             
             # Save results to a JSON file
             output_path = os.path.join(upload_dir, "gemini_transcripts.json")
@@ -210,20 +251,35 @@ def process_files_with_gemini(upload_dir):
             return formatted_results
             
         except json.JSONDecodeError as e:
-            print(f"Error: Could not parse JSON response: {str(e)}")
-            print(f"Raw response: {response.text}")
+            # JSON parsing failed
+            print(f"Attempt {attempt+1}/{max_retries+1}: JSON parse error: {str(e)}")
             
-            # Save the raw response for debugging
-            error_path = os.path.join(upload_dir, "gemini_error_response.txt")
+            # Save the problematic response for debugging
+            error_path = os.path.join(upload_dir, f"gemini_error_response_attempt_{attempt+1}.txt")
             with open(error_path, 'w') as f:
-                f.write(response.text)
+                f.write(response_text)
             
             print(f"Raw response saved to {error_path}")
-            return {"error": "Failed to parse response"}
+            
+            # If this was our last attempt, return an error
+            if attempt == max_retries:
+                print("All retry attempts failed")
+                return {"error": "Failed to parse response after multiple attempts"}
+            
+            # Otherwise, continue to the next retry attempt
+            print(f"Retrying... (Attempt {attempt+2}/{max_retries+1})")
+        
+        except Exception as e:
+            # For other exceptions (network issues, API errors, etc.)
+            print(f"Attempt {attempt+1}/{max_retries+1}: Error calling Gemini API: {str(e)}")
+            
+            if attempt == max_retries:
+                print("All retry attempts failed")
+                return {"error": f"API Error: {str(e)}"}
+            
+            print(f"Retrying... (Attempt {attempt+2}/{max_retries+1})")
     
-    except Exception as e:
-        print(f"Error processing files with Gemini API: {str(e)}")
-        return {"error": str(e)}
+    return {"error": "Failed to process files after multiple attempts"}
 
 # Processing function to return real videos from processed_videos folder
 def process_files(assignment_files, material_files):
@@ -336,7 +392,7 @@ def text_to_speech(request: TextToSpeechRequest, save_to_file: bool = False):
             voice_id=voice_id,
             model_id="eleven_flash_v2_5",
             output_format="mp3_22050_32",
-            voice_settings={"speed": 1, "stability": 0.45, "similarity_boost": 0.5}
+            voice_settings={"speed": 0.9, "stability": 0.45, "similarity_boost": 0.5}
         )
         
         # Convert generator to bytes
@@ -372,6 +428,7 @@ import os
 from openai import OpenAI
 import re
 from dotenv import load_dotenv
+import random
 
 # Load environment variables from .env file
 # load_dotenv()
@@ -471,10 +528,26 @@ def create_tiktok_style_video(video_path, audio_path, subtitles, output_path):
     # Load video and audio
     video = VideoFileClip(video_path)
     audio = AudioFileClip(audio_path)
+    
+    # Make video loop if it's shorter than audio
+    if video.duration < audio.duration:
+        print(f"Video duration ({video.duration}s) is shorter than audio ({audio.duration}s). Creating looped video.")
+        # Calculate how many times we need to loop the video
+        repeat_count = int(audio.duration / video.duration) + 1
+        # Create a list of repeated video clips
+        video_clips = [video] * repeat_count
+        # Concatenate the clips
+        from moviepy import concatenate_videoclips
+        looped_video = concatenate_videoclips(video_clips)
+        # Now use the looped video
+        video = looped_video.subclipped(0, audio.duration)
+    else:
+        # If video is longer, just cut it to audio length
+        video = video.subclipped(0, audio.duration)
      
     # Set video audio to the provided audio file
-    video = video.subclipped(0, audio.duration)    
-    video = video.with_audio(audio)    
+    video = video.with_audio(audio)
+    
     # Create text clips with TikTok style
     txt_clips = []
     
@@ -595,7 +668,7 @@ def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR,
         for name in common_names:
             audio_path = audio_dict[name]
             video_path = video_dict[name]
-            output_filename = f"{name}_tiktok.mp4"
+            output_filename = f"{name}.mp4"
             output_path = os.path.join(output_dir, output_filename)
             
             try:
@@ -620,42 +693,71 @@ def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR,
             except Exception as e:
                 print(f"Error processing {name}: {str(e)}")
     else:
-        # Process all combinations
-        total_combinations = len(audio_files) * len(video_files)
-        
+        # Process each audio file with a random video
         for audio_path in audio_files:
             audio_name = os.path.splitext(os.path.basename(audio_path))[0]
             
-            for video_path in video_files:
-                video_name = os.path.splitext(os.path.basename(video_path))[0]
+            # Select a random video file
+            random_video_path = random.choice(video_files)
+            video_name = os.path.splitext(os.path.basename(random_video_path))[0]
+            
+            output_filename = f"{audio_name}.mp4"
+            output_path = os.path.join(output_dir, output_filename)
+            
+            try:
+                print(f"\nProcessing: Audio '{audio_name}' with randomly selected Video '{video_name}'")
                 
-                output_filename = f"{audio_name}_{video_name}_tiktok.mp4"
-                output_path = os.path.join(output_dir, output_filename)
+                # Transcribe audio and create subtitles
+                audio = AudioFileClip(audio_path)
+                audio_duration = audio.duration
                 
-                try:
-                    print(f"\nProcessing: Audio '{audio_name}' with Video '{video_name}'")
-                    
-                    # Transcribe audio and create subtitles
-                    audio = AudioFileClip(audio_path)
-                    audio_duration = audio.duration
-                    
-                    transcription = transcribe_audio(audio_path)
-                    subtitles = convert_transcription_to_subtitles(transcription, audio_duration, words_per_chunk=3)
-                    
-                    # Create the TikTok-style video
-                    create_tiktok_style_video(video_path, audio_path, subtitles, output_path)
-                    
-                    # Clean up
-                    audio.close()
-                    
-                    processed += 1
-                    print(f"Processed {processed}/{total_combinations} combinations")
-                    
-                except Exception as e:
-                    print(f"Error processing {audio_name} with {video_name}: {str(e)}")
+                transcription = transcribe_audio(audio_path)
+                subtitles = convert_transcription_to_subtitles(transcription, audio_duration, words_per_chunk=3)
+                
+                # Create the TikTok-style video
+                create_tiktok_style_video(random_video_path, audio_path, subtitles, output_path)
+                
+                # Clean up
+                audio.close()
+                
+                processed += 1
+                print(f"Processed {processed}/{len(audio_files)} audio files")
+                
+            except Exception as e:
+                print(f"Error processing {audio_name} with {video_name}: {str(e)}")
     
     print(f"\nDone! {processed} TikTok-style videos were created in {output_dir}")
     return processed
 
+@app.post("/api/cleanup")
+async def cleanup_directories():
+    """Clean up temporary directories: uploads, mp3s, and output_videos"""
+    print("Cleaning up directories...")
+    try:
+        # Get directories to clean up
+        directories = [
+            "./backend/uploads",
+            "./backend/mp3s",
+            "output_videos"
+        ]
+        
+        # Delete all files in each directory
+        for directory in directories:
+            if os.path.exists(directory):
+                files = glob.glob(f"{directory}/*")
+                for file in files:
+                    try:
+                        if os.path.isfile(file):
+                            os.remove(file)
+                        elif os.path.isdir(file):
+                            import shutil
+                            shutil.rmtree(file)
+                    except Exception as e:
+                        print(f"Error removing {file}: {e}")
+        
+        return {"status": "success", "message": "Directories cleaned up successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to clean up directories: {str(e)}")
+    
 if __name__ == "__main__":
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

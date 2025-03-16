@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import FileUpload from '@/components/FileUpload';
 import Link from 'next/link';
-import { processFiles, checkAPIHealth } from '@/lib/api';
+import { processFiles, checkAPIHealth, cleanupDirectories } from '@/lib/api';
 
 export default function UploadMaterials() {
   const router = useRouter();
@@ -17,6 +17,19 @@ export default function UploadMaterials() {
     // Clear any previous videos from session storage
     sessionStorage.removeItem('generatedVideos');
     
+    // Run cleanup to delete temp directories
+    const runCleanup = async () => {
+      try {
+        const cleanupSuccess = await cleanupDirectories();
+        if (!cleanupSuccess) {
+          console.warn('Directory cleanup failed, but continuing anyway');
+        }
+      } catch (error) {
+        console.error('Error during cleanup:', error);
+        // Continue execution even if cleanup fails
+      }
+    };
+    
     // Check if API is available
     const checkAPI = async () => {
       const isHealthy = await checkAPIHealth();
@@ -26,6 +39,8 @@ export default function UploadMaterials() {
       }
     };
     
+    // Run both operations when component mounts
+    runCleanup();
     checkAPI();
   }, []);
 
