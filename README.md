@@ -52,8 +52,8 @@ An AI-powered platform that transforms learning materials into engaging, short-f
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/cu-brainrot-assistant.git
-cd cu-brainrot-assistant
+git clone https://github.com/yourusername/StudyBytes.git
+cd StudyBytes
 ```
 
 2. Install frontend dependencies:
