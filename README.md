@@ -1,14 +1,6 @@
+# [https://devpost.com/software/studybytes](Devpost)
+
 # How to run the project
-
-fastpi:
-
-cd fastapi
-
-python install -r requirements.txt
-
-python main.py
-
-python test.py
 
 backend:
 
