@@ -31,7 +31,7 @@ git clone https://github.com/RohanSreelesh/StudyBytes.git
 cd StudyBytes
 ```
 
-2. Setup a python virtual environment
+2. Setup a python virtual environment with Python 3.12
 
 3. Setup and rename "backend/example.env" to "backend/.env"
 
@@ -64,7 +64,7 @@ npm run dev
 ```bash
 cd backend
 
-python main.py
+py main.py
 ```
 
 6. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.

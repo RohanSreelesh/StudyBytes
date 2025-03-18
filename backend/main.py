@@ -75,8 +75,8 @@ class Video(BaseModel):
     duration: int  # in seconds
     description: str = ""
 
-print("gemeni key:",os.getenv("GEMENI_API_KEY"))
-genai.configure(api_key=os.getenv("GEMENI_API_KEY"))
+print("gemini key:",os.getenv("GEMINI_API_KEY"))
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 def process_files_with_gemini(upload_dir, max_retries=3):
     """
