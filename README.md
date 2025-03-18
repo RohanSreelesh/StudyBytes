@@ -1,34 +1,15 @@
 # [https://devpost.com/software/studybytes](Devpost)
 
-# How to run the project
-
-backend:
-
-cd fastapi
-
-python install -r requirements.txt
-
-python main.py
-
-src:
-
-cd src
-
-npm i
-
-npm run
-
 # StudyBytes
 
-An AI-powered platform that transforms learning materials into engaging, short-form educational videos tailored to each student's learning style.
+An AI-powered platform that transforms learning materials into engaging, short-form educational videos.
 
 ## Features
 
-- Upload learning materials in various formats (PDF, PPT, PPTX, DOC, DOCX, TXT, JPG, PNG)
+- Upload learning materials (PDF, TXT)
 - AI processing to generate personalized educational videos
-- Short-form video player with swipe navigation (optimized for 3:4 aspect ratio)
-- Video preview on hover and intuitive touch controls
-- Responsive design optimized for both desktop and mobile
+- Short-form video player
+- Video preview on hover and intuitive controls
 - Dark mode support
 - Modern, intuitive user interface
 
@@ -40,76 +21,53 @@ An AI-powered platform that transforms learning materials into engaging, short-f
 - npm or yarn
 - Python 3.8+ (for backend)
 
+# How to run the project
+
 ### Installation
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/StudyBytes.git
+git clone https://github.com/RohanSreelesh/StudyBytes.git
 cd StudyBytes
 ```
 
-2. Install frontend dependencies:
+2. Setup a python virtual environment
+
+3. Setup and rename "backend/example.env" to "backend/.env"
+
+4. Install dependencies:
+
+### Frontend
+
 ```bash
-npm install
-# or
-yarn install
+npm i
 ```
 
-3. Install backend dependencies:
+### Backend
+
 ```bash
 cd backend
+
 pip install -r requirements.txt
-cd ..
 ```
 
-### Running the Application
+5. Run the Application
 
-#### Run Frontend and Backend Together (Recommended)
-
-```bash
-npm run dev:full
-# or
-yarn dev:full
-```
-
-This will start both the Next.js frontend and the FastAPI backend concurrently.
-
-#### Run Frontend Only
+#### Run Frontend
 
 ```bash
 npm run dev
-# or
-yarn dev
 ```
 
-#### Run Backend Only
+#### Run Backend
 
 ```bash
-npm run backend
-# or
-yarn backend
+cd backend
+
+python main.py
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
-
-### Adding Sample Videos
-
-To test the video player functionality:
-
-1. Obtain sample MP4 video files
-2. Place them in the `backend/processed_videos` directory
-3. Start the backend server
-4. The videos will be automatically detected and available in the application
-
-Sample videos can be obtained from:
-- https://samplelib.com/sample-mp4.html
-- https://sample-videos.com/
-
-Example command to download a sample video:
-```bash
-# Download a sample video to the processed_videos directory
-curl -o backend/processed_videos/sample_video.mp4 https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4
-```
+6. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
 
 ## Tech Stack
 
@@ -132,7 +90,7 @@ curl -o backend/processed_videos/sample_video.mp4 https://sample-videos.com/vide
 - `/backend`: Python FastAPI server
   - `main.py`: Main API implementation
   - `requirements.txt`: Python dependencies
-- `/uploads`: Directory where uploaded files are stored (created automatically)
+  - `uploads`: Directory where uploaded files are stored (created automatically)
 
 ## API Endpoints
 
@@ -142,7 +100,3 @@ curl -o backend/processed_videos/sample_video.mp4 https://sample-videos.com/vide
   - Returns an array of generated videos
 - `GET /api/videos`: Get list of all available processed videos
 - `/videos/*`: Static file serving for processed video files
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
