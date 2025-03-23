@@ -1,23 +1,24 @@
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from typing import List
 import uvicorn
 import time
 import os
 import uuid
 import glob
-from pydantic import BaseModel
-from moviepy import VideoFileClip, TextClip, CompositeVideoClip
-import google.generativeai as genai
+import io
+import random
+import re
 import json
 from dotenv import load_dotenv
+from pydantic import BaseModel
+from moviepy import VideoFileClip, TextClip, CompositeVideoClip, AudioFileClip
+import google.generativeai as genai
 from PyPDF2 import PdfReader
-
-from fastapi.responses import StreamingResponse
 from elevenlabs.client import ElevenLabs
 from elevenlabs import play
-import io
 # from .video_gen import create_videos
 
 # Load environment variables from .env file
@@ -46,6 +47,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Default directories (can be overridden when calling process_files)
+DEFAULT_AUDIO_DIR = "./backend/mp3s"     # Directory containing MP3 files
+DEFAULT_VIDEO_DIR = "./video_files"      # Directory containing video files
+DEFAULT_OUTPUT_DIR = "./output_videos"   # Directory for output videos
+DEFAULT_PROCESS_MATCHING_ONLY = False    # Set to True to only process files with matching names
 
 # Directory to save uploaded files
 UPLOAD_DIR = "backend/uploads"
@@ -100,7 +107,7 @@ def process_files_with_gemini(upload_dir, max_retries=3):
     files = [f for f in os.listdir(upload_dir) if os.path.isfile(os.path.join(upload_dir, f))]
     
     if not files:
-        print(f"No files found in {upload_dir}")
+        print(f"Error: No files found in {upload_dir}")
         return None
     
     print(f"Found {len(files)} files in upload directory")
@@ -146,15 +153,13 @@ def process_files_with_gemini(upload_dir, max_retries=3):
     for file_name, content in file_contents.items():
         files_content += f"\n\n--- FILE: {file_name} ---\n{content}\n--- END OF FILE: {file_name} ---"
     
-    # Initialize model
+    # TODO: get better model that's still free
     model = genai.GenerativeModel('gemini-1.5-pro')
     
     # Retry loop for handling JSON parsing failures
     for attempt in range(max_retries + 1):  # +1 to include the initial attempt
         try:
-            # Adjust prompt based on retry attempt to emphasize JSON requirements
             if attempt == 0:
-                # Initial prompt
                 prompt = f"""
                 Please analyze all the following files and provide transcripts that explain 
                 the material in each file in an easy-to-understand way. You should create as many videos as required to explain the important concepts in the material.
@@ -180,9 +185,8 @@ def process_files_with_gemini(upload_dir, max_retries=3):
                 Files to analyze:{files_content}
                 """
             else:
-                #sleep
+                # prevent rate limiting
                 time.sleep(2)
-                # Modified prompt for retry attempts - emphasizing JSON formatting more strongly
                 prompt = f"""
                 IMPORTANT: Your response MUST be a valid JSON object and NOTHING ELSE. No markdown, no explanations, no code blocks.
                 
@@ -265,11 +269,10 @@ def process_files_with_gemini(upload_dir, max_retries=3):
             print(f"Raw response saved to {error_path}")
             
             # If this was our last attempt, return an error
-            if attempt == max_retries:
+            if attempt >= max_retries:
                 print("All retry attempts failed")
                 return {"error": "Failed to parse response after multiple attempts"}
             
-            # Otherwise, continue to the next retry attempt
             print(f"Retrying... (Attempt {attempt+2}/{max_retries+1})")
         
         except Exception as e:
@@ -286,9 +289,7 @@ def process_files_with_gemini(upload_dir, max_retries=3):
 
 # Processing function to return real videos from processed_videos folder
 def process_files(assignment_files, material_files):
-    """
-    Process files and return links to processed videos
-    """
+    """Process files and return links to processed videos"""
     
     # In a real implementation, this would process the files and generate videos
     # For now, we'll return the existing videos in the processed_videos directory
@@ -317,12 +318,6 @@ def process_files(assignment_files, material_files):
         )
     
     return videos
-
-from fastapi import BackgroundTasks
-import time
-import random
-import uuid
-import re
 
 # Store processing tasks and their status
 processing_tasks = {}
@@ -645,26 +640,46 @@ def get_video_duration(video_path):
         print(f"Error getting duration for {video_path}: {e}")
         return 60  # fallback duration
 
-# voicetts.py
+# voicetts.py methods below
 
 class TextToSpeechRequest(BaseModel):
     text: str
 
 def text_to_speech(request: TextToSpeechRequest, save_to_file: bool = False):
     try:
-        # Generate audio from text
-        print(f"Converting text to speech: {request.text}")
-        print(f"Voice ID: {voice_id}")
-        audio_generator = client_eleven.text_to_speech.convert(
+        # Import StyleTTS2 dependencies
+        import torch
+        import soundfile as sf
+        import numpy as np
+        from styletts2 import StyleTTS2
+        
+        print(f"Converting text to speech with StyleTTS2: {request.text}")
+        
+        # Initialize StyleTTS2 model (consider moving this to global scope for better performance)
+        model = StyleTTS2()  # You may need to specify model path or other parameters
+        
+        # Generate speech using StyleTTS2
+        # You can set different style parameters as needed
+        speech_output = model.inference(
             text=request.text,
-            voice_id=voice_id,
-            model_id="eleven_flash_v2_5",
-            output_format="mp3_22050_32",
-            voice_settings={"speed": 0.9, "stability": 0.45, "similarity_boost": 0.5}
+            style_text="Please read this in a clear, engaging educational style.",
+            speaking_rate=1.0  # Adjust rate as needed (similar to ElevenLabs' 0.9 speed)
         )
         
-        # Convert generator to bytes
-        audio_bytes = b"".join(chunk for chunk in audio_generator)
+        # Convert model output to audio bytes
+        # Assuming the model returns a numpy array of audio samples
+        audio_samples = speech_output["audio"]  # This may vary based on the specific StyleTTS2 implementation
+        sample_rate = 22050  # Standard rate, adjust if your model uses different rate
+        
+        # Create an in-memory buffer for the audio
+        audio_buffer = io.BytesIO()
+        
+        # Save the audio to the buffer in mp3 format
+        sf.write(audio_buffer, audio_samples, sample_rate, format="mp3")
+        
+        # Get the audio bytes from the buffer
+        audio_buffer.seek(0)
+        audio_bytes = audio_buffer.read()
         
         if save_to_file:
             # Generate a unique filename
@@ -687,42 +702,48 @@ def text_to_speech(request: TextToSpeechRequest, save_to_file: bool = False):
                 headers={"Content-Disposition": "attachment; filename=speech.mp3"}
             )
     except Exception as e:
-        print(f"Error converting text to speech: {str(e)}")
+        print(f"Error converting text to speech with StyleTTS2: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-from moviepy import VideoFileClip, TextClip, CompositeVideoClip, AudioFileClip
-import os
-from openai import OpenAI
-import re
-from dotenv import load_dotenv
-import random
-
-# Load environment variables from .env file
-# load_dotenv()
-
-# Default directories (can be overridden when calling process_files)
-DEFAULT_AUDIO_DIR = "./backend/mp3s"     # Directory containing MP3 files
-DEFAULT_VIDEO_DIR = "./video_files"      # Directory containing video files
-DEFAULT_OUTPUT_DIR = "./output_videos"   # Directory for output videos
-DEFAULT_PROCESS_MATCHING_ONLY = False    # Set to True to only process files with matching names
-
-# Initialize OpenAI client
-client = OpenAI(
-    api_key=(os.getenv("OPEN_AI_KEY"))
-)
-
-def transcribe_video(video_path):
-    """Transcribe video using OpenAI Whisper"""
-    print(f"Transcribing video from: {video_path}")
-    with open(video_path, "rb") as video_file:
-        response = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=video_file
-        )
-    transcription = response.text
-    print(f"Transcription: {transcription}")
-    return transcription
+# def text_to_speech(request: TextToSpeechRequest, save_to_file: bool = False):
+#     try:
+#         # Generate audio from text
+#         print(f"Converting text to speech: {request.text}")
+#         print(f"Voice ID: {voice_id}")
+#         audio_generator = client_eleven.text_to_speech.convert(
+#             text=request.text,
+#             voice_id=voice_id,
+#             model_id="eleven_flash_v2_5",
+#             output_format="mp3_22050_32",
+#             voice_settings={"speed": 0.9, "stability": 0.45, "similarity_boost": 0.5}
+#         )
+        
+#         # Convert generator to bytes
+#         audio_bytes = b"".join(chunk for chunk in audio_generator)
+        
+#         if save_to_file:
+#             # Generate a unique filename
+#             file_path = f"{uuid.uuid4()}.mp3"
+            
+#             # Save the audio to a file
+#             with open(file_path, "wb") as f:
+#                 f.write(audio_bytes)
+                
+#             # Return the file path
+#             return file_path
+#         else:
+#             # Create a file-like object from the audio bytes
+#             audio_stream = io.BytesIO(audio_bytes)
+            
+#             # Return the audio as a streaming response
+#             return StreamingResponse(
+#                 audio_stream, 
+#                 media_type="audio/mpeg",
+#                 headers={"Content-Disposition": "attachment; filename=speech.mp3"}
+#             )
+#     except Exception as e:
+#         print(f"Error converting text to speech: {str(e)}")
+#         raise HTTPException(status_code=500, detail=str(e))
 
 def add_tiktok_emphasis(text):
     """Add TikTok-style emphasis to certain words"""
@@ -750,7 +771,6 @@ def convert_transcription_to_subtitles(transcription, video_duration, words_per_
     cleaned_text = re.sub(r'\s+', ' ', transcription).strip()
     words = cleaned_text.split()
     
-    # Skip if no words
     if not words:
         return []
     
@@ -776,18 +796,6 @@ def convert_transcription_to_subtitles(transcription, video_duration, words_per_
         subtitles.append([start_time, end_time, chunk_text])
     
     return subtitles
-
-def transcribe_audio(audio_path):
-    """Transcribe audio file using OpenAI Whisper"""
-    print(f"Transcribing audio from: {audio_path}")
-    with open(audio_path, "rb") as audio_file:
-        response = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file
-        )
-    transcription = response.text
-    print(f"Transcription: {transcription}")
-    return transcription
 
 def create_tiktok_style_video(video_path, audio_path, subtitles, output_path):
     print(f"Loading video from: {video_path}")
@@ -913,11 +921,6 @@ def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR,
     Returns:
         int: Number of videos processed
     """
-    # Ensure we have the 're' module imported for regex
-    global re
-    if 're' not in globals():
-        import re
-    # Check if directories exist
     if not os.path.isdir(audio_dir):
         print(f"Error: Audio directory '{audio_dir}' does not exist")
         return 0
@@ -926,12 +929,21 @@ def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR,
         print(f"Error: Video directory '{video_dir}' does not exist")
         return 0
     
-    # Create output directory if it doesn't exist
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
         print(f"Created output directory: {output_dir}")
     
-    # Get audio and video files
+    transcripts_path = os.path.join("backend/uploads", "gemini_transcripts.json")
+    try:
+        with open(transcripts_path, 'r') as f:
+            transcripts = json.load(f)
+    except FileNotFoundError:
+        print(f"Error: Transcript file not found at {transcripts_path}")
+        return 0
+    except json.JSONDecodeError:
+        print(f"Error: Invalid JSON in transcript file at {transcripts_path}")
+        return 0
+    
     audio_files = get_supported_files(audio_dir, ['.mp3', '.wav', '.m4a', '.flac', '.aac'])
     video_files = get_supported_files(video_dir, ['.mp4', '.mov', '.avi', '.mkv', '.webm'])
     
@@ -948,78 +960,53 @@ def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR,
     # Process files
     processed = 0
     
-    if process_matching_only:
-        # Match files by filename (without extension)
-        audio_dict = {os.path.splitext(os.path.basename(f))[0]: f for f in audio_files}
-        video_dict = {os.path.splitext(os.path.basename(f))[0]: f for f in video_files}
+    # Create a mapping between audio filenames and their paths
+    audio_dict = {os.path.splitext(os.path.basename(f))[0]: f for f in audio_files}
+    
+    video_index = 0
+    
+    for audio_name, audio_path in audio_dict.items():
+        # Find the matching transcript by comparing with sanitized filename
+        transcript_text = None
+        for transcript_name, transcript_data in transcripts.items():
+            # Compare the sanitized transcript name with the audio filename
+            safe_transcript_name = transcript_name.replace(":", "_").replace("/", "_").replace("\\", "_").replace(" ", "_")
+            if safe_transcript_name == audio_name or transcript_name == audio_name:
+                if isinstance(transcript_data, dict) and "transcript" in transcript_data:
+                    transcript_text = transcript_data["transcript"]
+                    break
         
-        # Find common keys
-        common_names = set(audio_dict.keys()).intersection(video_dict.keys())
+        if not transcript_text:
+            print(f"No transcript found for audio file: {audio_name}, skipping...")
+            continue
+            
+        # Select the next video file in sequence
+        video_path = video_files[video_index]
+        video_name = os.path.splitext(os.path.basename(video_path))[0]
         
-        if not common_names:
-            print("No matching filenames found between audio and video directories")
-            return 0
+        # video_index = (video_index + 1) % len(video_files)
+        video_index += 1
+        
+        output_filename = f"{audio_name}.mp4"
+        output_path = os.path.join(output_dir, output_filename)
+        
+        try:
+            print(f"\nProcessing: Audio '{audio_name}' with Video '{video_name}'")
             
-        for name in common_names:
-            audio_path = audio_dict[name]
-            video_path = video_dict[name]
-            output_filename = f"{name}.mp4"
-            output_path = os.path.join(output_dir, output_filename)
+            audio = AudioFileClip(audio_path)
+            audio_duration = audio.duration
             
-            try:
-                print(f"\nProcessing matching pair: {name}")
-                
-                # Transcribe audio and create subtitles
-                audio = AudioFileClip(audio_path)
-                audio_duration = audio.duration
-                
-                transcription = transcribe_audio(audio_path)
-                subtitles = convert_transcription_to_subtitles(transcription, audio_duration, words_per_chunk=3)
-                
-                # Create the TikTok-style video
-                create_tiktok_style_video(video_path, audio_path, subtitles, output_path)
-                
-                # Clean up
-                audio.close()
-                
-                processed += 1
-                print(f"Processed {processed}/{len(common_names)} matching pairs")
-                
-            except Exception as e:
-                print(f"Error processing {name}: {str(e)}")
-    else:
-        # Process each audio file with a random video
-        for audio_path in audio_files:
-            audio_name = os.path.splitext(os.path.basename(audio_path))[0]
+            subtitles = convert_transcription_to_subtitles(transcript_text, audio_duration, words_per_chunk=3)
             
-            # Select a random video file
-            random_video_path = random.choice(video_files)
-            video_name = os.path.splitext(os.path.basename(random_video_path))[0]
+            create_tiktok_style_video(video_path, audio_path, subtitles, output_path)
             
-            output_filename = f"{audio_name}.mp4"
-            output_path = os.path.join(output_dir, output_filename)
+            audio.close()
             
-            try:
-                print(f"\nProcessing: Audio '{audio_name}' with randomly selected Video '{video_name}'")
-                
-                # Transcribe audio and create subtitles
-                audio = AudioFileClip(audio_path)
-                audio_duration = audio.duration
-                
-                transcription = transcribe_audio(audio_path)
-                subtitles = convert_transcription_to_subtitles(transcription, audio_duration, words_per_chunk=3)
-                
-                # Create the TikTok-style video
-                create_tiktok_style_video(random_video_path, audio_path, subtitles, output_path)
-                
-                # Clean up
-                audio.close()
-                
-                processed += 1
-                print(f"Processed {processed}/{len(audio_files)} audio files")
-                
-            except Exception as e:
-                print(f"Error processing {audio_name} with {video_name}: {str(e)}")
+            processed += 1
+            print(f"Processed {processed}/{len(audio_dict)} audio files")
+            
+        except Exception as e:
+            print(f"Error processing {audio_name}: {str(e)}")
     
     print(f"\nDone! {processed} TikTok-style videos were created in {output_dir}")
     return processed

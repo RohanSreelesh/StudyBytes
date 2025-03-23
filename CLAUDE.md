@@ -4,12 +4,12 @@
 AI-powered platform converting learning materials into engaging, short-form educational videos tailored to students' learning needs.
 
 ## Commands
-- **Setup**: `npm install` or `yarn install`
-- **Dev server**: `npm run dev` or `yarn dev`
-- **Build**: `npm run build` or `yarn build`
-- **Lint**: `npm run lint` or `yarn lint`
-- **Test**: `npm test` or `yarn test`
-- **Single test**: `npm test -- -t "test name"` or `yarn test -t "test name"`
+- **Setup**: `npm install`
+- **Dev server**: `npm run dev`
+- **Build**: `npm run build`
+- **Lint**: `npm run lint`
+- **Test**: `npm test`
+- **Single test**: `npm test -- -t "test name"`
 
 ## Code Style Guidelines
 - **Framework**: React with Next.js for frontend
