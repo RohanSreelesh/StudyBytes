@@ -12,7 +12,6 @@ export default function ProcessingPage() {
   const [processingId, setProcessingId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Get processing ID from session storage
     const id = sessionStorage.getItem('processingId');
     if (!id) {
       router.push('/upload-materials');
@@ -21,14 +20,12 @@ export default function ProcessingPage() {
     
     setProcessingId(id);
     
-    // Set up polling for status updates
     const intervalId = setInterval(async () => {
       try {
         const statusData = await checkProcessingStatus(id);
         setProgress(statusData.progress);
         setStatus(statusData.status);
         
-        // If processing is complete, navigate to results
         if (statusData.complete) {
           clearInterval(intervalId);
           sessionStorage.setItem('generatedVideos', JSON.stringify(statusData.videos || []));
@@ -38,7 +35,7 @@ export default function ProcessingPage() {
         console.error('Error checking processing status:', err);
         setError('Failed to get processing updates. Please try again.');
       }
-    }, 1500);
+    }, 2000);
     
     // Clean up interval on unmount
     return () => clearInterval(intervalId);

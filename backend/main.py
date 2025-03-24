@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, BackgroundTa
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
-from typing import List
+from typing import List, Optional
 import uvicorn
 import time
 import os
@@ -17,27 +17,34 @@ from pydantic import BaseModel
 from moviepy import VideoFileClip, TextClip, CompositeVideoClip, AudioFileClip
 import google.generativeai as genai
 from PyPDF2 import PdfReader
-from elevenlabs.client import ElevenLabs
-from elevenlabs import play
-# from .video_gen import create_videos
+# import styletts2 # Might need this to make file path handling of ASR and F0 models work
+from styletts2 import tts
+from moviepy import concatenate_videoclips
+import traceback
+import shutil
+import scipy.io.wavfile
 
-# Load environment variables from .env file
 load_dotenv()
 
+# Default directories (can be overridden when calling process_files)
+DEFAULT_AUDIO_DIR = "./backend/mp3s"     # Directory for TTS audio files
+DEFAULT_VIDEO_DIR = "../video_files"     # Directory for background videos, STATIC
+DEFAULT_OUTPUT_DIR = "./output_videos"   # Directory for output videos
+# Voice sample to use for cloning and better voice quality
+VOICE_SAMPLE_PATH = "./tts_settings/faster_Perfect_Your_British_Pronunciation_UK_Cities_and_Towns_Ep_744_b9a222.mp3"
+
+UPLOAD_DIR = "backend/uploads"         # Directory for user uploaded files
+MP3_DIR = "backend/mp3s"               # Directory for TTS audio files
+PROCESSED_VIDEOS_DIR = "output_videos" # Directory for output videos
+
+# Create directories (this should happen once)
+directories = [
+    UPLOAD_DIR,
+    MP3_DIR,
+    PROCESSED_VIDEOS_DIR
+]
+
 app = FastAPI(title="StudyBytes API")
-
-# Set ElevenLabs API key
-api_key = os.getenv("ELEVENLABS_API_KEY")
-voice_id = os.getenv("VOICE_ID")
-
-if not api_key:
-    raise ValueError("Missing ELEVENLABS_API_KEY in .env file")
-    
-if not voice_id:
-    raise ValueError("Missing VOICE_ID in .env file")
-
-# Initialize ElevenLabs client
-client_eleven = ElevenLabs(api_key=api_key)
 
 # Enable CORS
 app.add_middleware(
@@ -48,30 +55,15 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Default directories (can be overridden when calling process_files)
-DEFAULT_AUDIO_DIR = "./backend/mp3s"     # Directory containing MP3 files
-DEFAULT_VIDEO_DIR = "./video_files"      # Directory containing video files
-DEFAULT_OUTPUT_DIR = "./output_videos"   # Directory for output videos
-DEFAULT_PROCESS_MATCHING_ONLY = False    # Set to True to only process files with matching names
-
-# Directory to save uploaded files
-UPLOAD_DIR = "backend/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# Directory to save mp3 files
-MP3_DIR = "backend/mp3s"
-os.makedirs(MP3_DIR, exist_ok=True)
-
-# Directory for processed videos
-PROCESSED_VIDEOS_DIR = "output_videos"
-os.makedirs(PROCESSED_VIDEOS_DIR, exist_ok=True)
-
-# Get absolute path for the processed videos directory
-ABSOLUTE_PROCESSED_VIDEOS_DIR = os.path.abspath(PROCESSED_VIDEOS_DIR)
-print(f"Mounting videos from: {ABSOLUTE_PROCESSED_VIDEOS_DIR}")
+for directory in directories:
+    os.makedirs(directory, exist_ok=True)
 
 # Mount static files directory
+ABSOLUTE_PROCESSED_VIDEOS_DIR = os.path.abspath(PROCESSED_VIDEOS_DIR)
+print(f"Mounting videos from: {ABSOLUTE_PROCESSED_VIDEOS_DIR}")
 app.mount("/videos", StaticFiles(directory=ABSOLUTE_PROCESSED_VIDEOS_DIR), name="videos")
+
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
 # Video data model
 class Video(BaseModel):
@@ -82,8 +74,20 @@ class Video(BaseModel):
     duration: int  # in seconds
     description: str = ""
 
-print("gemini key:",os.getenv("GEMINI_API_KEY"))
-genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+# Initialize StyleTTS2 once as a global object for better performance
+os.makedirs('./tts_settings', exist_ok=True)
+model_path = './tts_settings/epochs_2nd_00020.pth'
+config_path = './tts_settings/config.yml'
+
+if os.path.exists(model_path) or os.path.exists(config_path):
+    print("TTS: Using custom model checkpoint and config...")
+    tts_instance = tts.StyleTTS2(
+        model_checkpoint_path=model_path,
+        config_path=config_path
+    )
+else:
+    print("TTS: Model files not found. Using default models (will be downloaded)...")
+    tts_instance = tts.StyleTTS2()  # Uses default paths
 
 def process_files_with_gemini(upload_dir, max_retries=3):
     """
@@ -289,10 +293,7 @@ def process_files_with_gemini(upload_dir, max_retries=3):
 
 # Processing function to return real videos from processed_videos folder
 def process_files(assignment_files, material_files):
-    """Process files and return links to processed videos"""
-    
-    # In a real implementation, this would process the files and generate videos
-    # For now, we'll return the existing videos in the processed_videos directory
+    """Process files and return list of processed video objects"""
     
     videos = []
     video_files = glob.glob(os.path.join(PROCESSED_VIDEOS_DIR, "*.mp4"))
@@ -316,11 +317,51 @@ def process_files(assignment_files, material_files):
                 description=f"This video explains {title.lower()} from your learning with detailed examples."
             )
         )
-    
+    # Return the existing videos in the processed_videos directory
     return videos
 
 # Store processing tasks and their status
 processing_tasks = {}
+
+def update_tasks(
+    processing_id: str,
+    *,
+    status: Optional[str] = None,
+    progress: Optional[int] = None,
+    complete: Optional[bool] = None,
+    total_audios: Optional[int] = None,
+    current_audio: Optional[int] = None,
+    total_videos: Optional[int] = None
+) -> None:
+    """
+    Update the status of a processing task. Only specified fields are modified.
+    
+    Args:
+        processing_id: Identifier for the task
+        status: New status (optional)
+        progress: Progress percentage (optional)
+        complete: Completion flag (optional)
+        total_audios: Total audio files (optional)
+        current_audio: Current audio file index (optional)
+        total_videos: Total video files (optional)
+    """
+    if processing_id in processing_tasks:
+        update_data = {}
+        if status is not None:
+            update_data["status"] = status
+        if progress is not None:
+            update_data["progress"] = progress
+        if total_audios is not None:
+            update_data["totalAudios"] = total_audios
+        if current_audio is not None:
+            update_data["currentAudio"] = current_audio
+        if total_videos is not None:
+            update_data["totalVideos"] = total_videos
+        if complete is not None:
+            update_data["complete"] = complete
+        
+        processing_tasks[processing_id].update(update_data)
+
 
 # Background task for processing files
 def process_files_task(processing_id: str, saved_files: List[str]):
@@ -328,73 +369,26 @@ def process_files_task(processing_id: str, saved_files: List[str]):
     Background task to process files and update progress
     """
     try:
-        # Initialize processing status
-        processing_tasks[processing_id].update({
-            "progress": 0,
-            "status": "Starting processing...",
-            "complete": False
-        })
-        
-        # Adjust progress allocations to weight video creation more heavily
-        # Analysis and content generation: 30%
-        # Audio generation: 20%
-        # Video creation (the longest part): 50%
-        
-        # Step 1: Initial analysis of learning materials (0-10%)
-        processing_tasks[processing_id].update({
-            "status": "Analyzing your learning materials...",
-            "progress": 0
-        })
-        
-        # Simulate initial analysis work
-        for i in range(10):
-            time.sleep(random.uniform(0.1, 0.3))
-            processing_tasks[processing_id]["progress"] = i
-
-        # Step 2: Extract key concepts (10-20%)
-        processing_tasks[processing_id].update({
-            "status": "Extracting key concepts...",
-            "progress": 10
-        })
-        
-        for i in range(10):
-            time.sleep(random.uniform(0.1, 0.2))
-            processing_tasks[processing_id]["progress"] = 10 + i
-        
-        # Step 3: Generate educational content (20-30%)
-        processing_tasks[processing_id].update({
-            "status": "Generating educational content...",
-            "progress": 20
-        })
+        update_tasks(processing_id, status="Extracting key concepts...", progress=20)
         
         # Actually process the files
         if "Transcripts" in processing_tasks[processing_id]:
             transcripts = processing_tasks[processing_id]["Transcripts"]
+            print("WARNING/ERROR: Using existing transcripts from processing task")
         else:
-            # Process files with Gemini
             transcripts = process_files_with_gemini(UPLOAD_DIR)
             processing_tasks[processing_id]["Transcripts"] = transcripts
             print("Transcripts:", transcripts)
         
-        # Update progress after content generation
-        processing_tasks[processing_id]["progress"] = 30
-        
         # Step 4: Audio narration generation (30-50%)
-        processing_tasks[processing_id].update({
-            "status": "Creating audio narration...",
-            "progress": 30
-        })
+        update_tasks(processing_id, status="Creating audio narration...", progress=30)
         
         # Generate audio files with progress updates
         audio_files = []
         valid_concepts = [k for k, v in transcripts.items() if isinstance(v, dict) and "transcript" in v]
         total_concepts = len(valid_concepts)
         
-        # Update with total count of audio files to be created
-        processing_tasks[processing_id].update({
-            "totalAudios": total_concepts,
-            "status": f"Preparing to create {total_concepts} audio files..."
-        })
+        update_tasks(processing_id, status=f"Preparing to create {total_concepts} audio files...", total_audios=total_concepts)
         
         if total_concepts > 0:
             # Allocate 20% of progress (30-50%) for audio generation
@@ -403,23 +397,15 @@ def process_files_task(processing_id: str, saved_files: List[str]):
             
             for i, concept_key in enumerate(valid_concepts):
                 concept_data = transcripts[concept_key]
-                # Update status with specific concept number and name
-                processing_tasks[processing_id].update({
-                    "status": f"Creating audio narration ({i+1}/{total_concepts}): {concept_key}...",
-                    "progress": int(current_progress),
-                    "currentAudio": i+1
-                })
+                update_tasks(processing_id, status=f"Creating audio narration ({i+1}/{total_concepts}): {concept_key}...", progress=int(current_progress), current_audio=i+1)
                 
-                # Create a TextToSpeechRequest object
                 request = TextToSpeechRequest(text=concept_data["transcript"])
-                # Set save_to_file=True to get a file path back
-                audio_file_path = text_to_speech(request, save_to_file=True)
+                audio_file_path = text_to_speech(request)
                 
-                # Sanitize the concept key for filename safety
                 safe_concept_key = concept_key.replace(":", "_").replace("/", "_").replace("\\", "_").replace(" ", "_")
                 
                 # Rename the file to match the sanitized concept key
-                final_path = os.path.join(MP3_DIR, f"{safe_concept_key}.mp3")
+                final_path = os.path.join(MP3_DIR, f"{safe_concept_key}.wav")
                 os.rename(audio_file_path, final_path)
                 audio_files.append(final_path)
                 
@@ -428,18 +414,15 @@ def process_files_task(processing_id: str, saved_files: List[str]):
                     processing_tasks[processing_id]["filename_mapping"] = {}
                 processing_tasks[processing_id]["filename_mapping"][concept_key] = safe_concept_key
                 
-                # Increment progress
                 current_progress += audio_progress_increment
-                processing_tasks[processing_id]["progress"] = int(current_progress)
+                update_tasks(processing_id, progress=int(current_progress))
         else:
             # If no concepts (unlikely), still advance progress
-            processing_tasks[processing_id]["progress"] = 50
+            print("WARNING/ERROR: No valid concepts found for audio generation")
+            update_tasks(processing_id, progress=50)
         
         # Step 5: Video creation (50-95%) - most time-consuming part with detailed updates
-        processing_tasks[processing_id].update({
-            "status": "Building videos with background visuals...",
-            "progress": 50
-        })
+        update_tasks(processing_id, status="Building videos with background visuals...", progress=50)
         
         # Monkey patch the create_videos function to provide status updates
         original_create_tiktok_style_video = create_tiktok_style_video
@@ -448,15 +431,12 @@ def process_files_task(processing_id: str, saved_files: List[str]):
             """Wrapped version of create_tiktok_style_video that updates progress"""
             # Extract video name from path
             video_name = os.path.basename(output_path)
-            processing_tasks[processing_id].update({
-                "status": f"Generating video: {video_name}...",
-            })
+            update_tasks(processing_id, status=f"Generating video: {video_name}...")
             
             # Call original function
             return original_create_tiktok_style_video(video_path, audio_path, subtitles, output_path)
         
         # Replace the function temporarily
-        import types
         create_tiktok_style_video_backup = create_tiktok_style_video
         globals()['create_tiktok_style_video'] = create_tiktok_style_video_with_progress
         
@@ -491,19 +471,14 @@ def process_files_task(processing_id: str, saved_files: List[str]):
                 
                 # Update status to show which video is currently being processed
                 current_video_number = int((current_video_progress - 50) / video_progress_increment) + 1
-                processing_tasks[processing_id].update({
-                    "status": f"Creating video {current_video_number}/{total_audio_files}: {video_name}...",
-                    "progress": int(current_video_progress)
-                })
+                update_tasks(processing_id, status=f"Creating video {current_video_number}/{total_audio_files}: {video_name}...", progress=int(current_video_progress))
                 
                 # Call original function to create the video with sanitized path
                 result = original_create_tiktok_style_video(video_path, audio_path, subtitles, safe_output_path)
                 
                 # Update progress after video is complete
                 current_video_progress += video_progress_increment
-                processing_tasks[processing_id].update({
-                    "progress": int(min(95, current_video_progress))
-                })
+                update_tasks(processing_id, progress=int(min(95, current_video_progress)))
                 
                 return result
             
@@ -521,11 +496,7 @@ def process_files_task(processing_id: str, saved_files: List[str]):
                 total_videos = len(mp3_files)
                 
                 # Set initial status before processing any videos
-                processing_tasks[processing_id].update({
-                    "status": f"Preparing to create {total_videos} videos...",
-                    "progress": 50,
-                    "totalVideos": total_videos
-                })
+                update_tasks(processing_id, status=f"Preparing to create {total_videos} videos...", progress=50, total_videos=total_videos)
                 
                 # Call original function - each video will update progress individually
                 return original_create_videos(*args, **kwargs)
@@ -535,7 +506,7 @@ def process_files_task(processing_id: str, saved_files: List[str]):
         
         # Generate videos from audio and material files
         print("Creating videos...")
-        create_videos("./backend/mp3s", "./video_files", "./output_videos", False)
+        create_videos()
         
         # Restore original functions
         globals()['create_tiktok_style_video'] = create_tiktok_style_video_backup
@@ -543,90 +514,20 @@ def process_files_task(processing_id: str, saved_files: List[str]):
             globals()['create_videos'] = original_create_videos
         
         # Step 6: Finalizing (95-100%)
-        processing_tasks[processing_id].update({
-            "status": "Finalizing your videos...",
-            "progress": 95
-        })
+        update_tasks(processing_id, status="Finalizing your videos...", progress=95)
         
         # Get processed videos
         videos = process_files([], saved_files)
         
-        # Simulate finalization work
-        for i in range(5):
-            time.sleep(0.2)
-            processing_tasks[processing_id]["progress"] = 95 + i
-        
         # Update processing status as complete with video data
-        processing_tasks[processing_id].update({
-            "progress": 100,
-            "status": "Processing complete!",
-            "complete": True,
-            "videos": videos
-        })
+        update_tasks(processing_id, status="Processing complete!", progress=100, complete=True)
+        processing_tasks[processing_id]["videos"] = videos
         
     except Exception as e:
-        print(f"Error in processing task {processing_id}: {str(e)}")
-        import traceback
+        print(f"ERROR in processing task {processing_id}: {str(e)}")
         traceback.print_exc()
-        
-        # Update status with error
-        processing_tasks[processing_id].update({
-            "status": f"Error: {str(e)}",
-            "error": str(e),
-            "complete": True
-        })
-
-@app.post("/api/process-materials", response_model=dict)
-async def process_materials(
-    background_tasks: BackgroundTasks,
-    material_files: List[UploadFile] = File(...)
-):
-    # Generate a processing ID
-    processing_id = str(uuid.uuid4())
-    
-    # Save material files
-    saved_material_files = []
-    for file in material_files:
-        file_path = os.path.join(UPLOAD_DIR, file.filename)
-        with open(file_path, "wb") as f:
-            content = await file.read()
-            f.write(content)
-        saved_material_files.append(file_path)
-    
-    # Initialize processing task
-    processing_tasks[processing_id] = {
-        "processingId": processing_id,
-        "startTime": time.time(),
-        "files": saved_material_files,
-        "progress": 0,
-        "status": "Initializing...",
-        "complete": False
-    }
-    
-    # Start background task to process files
-    background_tasks.add_task(process_files_task, processing_id, saved_material_files)
-    
-    return {"processingId": processing_id}
-
-@app.get("/api/processing-status/{processing_id}")
-async def get_processing_status(processing_id: str):
-    """
-    Get the status of a processing task
-    """
-    if processing_id not in processing_tasks:
-        raise HTTPException(status_code=404, detail="Processing task not found")
-    
-    return processing_tasks[processing_id]
-@app.get("/api/videos", response_model=List[Video])
-async def list_videos():
-    """
-    List all available processed videos
-    """
-    return process_files([], [])
-
-@app.get("/api/health")
-async def health_check():
-    return {"status": "healthy"}
+        update_tasks(processing_id, status=f"ERROR: {str(e)}", progress=100, complete=True)
+        return None
 
 
 def get_video_duration(video_path):
@@ -645,105 +546,51 @@ def get_video_duration(video_path):
 class TextToSpeechRequest(BaseModel):
     text: str
 
-def text_to_speech(request: TextToSpeechRequest, save_to_file: bool = False):
+def text_to_speech(request: TextToSpeechRequest):
+    """
+    Convert text to speech using StyleTTS2
+    :param request: TextToSpeechRequest containing the text to convert
+    :return: Path to the generated audio file
+    """
     try:
-        # Import StyleTTS2 dependencies
-        import torch
-        import soundfile as sf
-        import numpy as np
-        from styletts2 import StyleTTS2
+        print(f"Converting text to speech with StyleTTS2: {request.text[:50]}...")
         
-        print(f"Converting text to speech with StyleTTS2: {request.text}")
+        # file_name = f"{uuid.uuid4()}.mp3"
+        file_name = f"{uuid.uuid4()}.wav"
+        file_path = os.path.join(MP3_DIR, file_name)
         
-        # Initialize StyleTTS2 model (consider moving this to global scope for better performance)
-        model = StyleTTS2()  # You may need to specify model path or other parameters
-        
-        # Generate speech using StyleTTS2
-        # You can set different style parameters as needed
-        speech_output = model.inference(
+        # Generate audio using StyleTTS2
+        audio_output = tts_instance.inference(
             text=request.text,
-            style_text="Please read this in a clear, engaging educational style.",
-            speaking_rate=1.0  # Adjust rate as needed (similar to ElevenLabs' 0.9 speed)
+            target_voice_path=VOICE_SAMPLE_PATH,
+            # output_wav_file="./backend/mp3s/test.wav",
+            output_wav_file=file_path,
+            alpha=0.4,  # Determines timbre of speech
+            beta=0.8,   # Determines prosody of speech
+            diffusion_steps=6,  # Higher = more diverse but slower
+            embedding_scale=2   # Higher = more emotional/expressive
         )
         
-        # Convert model output to audio bytes
-        # Assuming the model returns a numpy array of audio samples
-        audio_samples = speech_output["audio"]  # This may vary based on the specific StyleTTS2 implementation
-        sample_rate = 22050  # Standard rate, adjust if your model uses different rate
+        # Save the audio directly to a WAV file (StyleTTS2 outputs at 24kHz)
+        scipy.io.wavfile.write(file_path, rate=24000, data=audio_output)
         
-        # Create an in-memory buffer for the audio
-        audio_buffer = io.BytesIO()
+        # Convert to MP3 if needed using ffmpeg
+        # try:
+        #     import subprocess
+        #     subprocess.run(['ffmpeg', '-i', temp_wav_path, '-codec:a', 'libmp3lame', '-qscale:a', '2', file_path], 
+        #                    check=True, capture_output=True)
+        #     os.remove(temp_wav_path)  # Clean up temp WAV file
+        # except (ImportError, subprocess.SubprocessError):
+        #     # Fallback: just rename the WAV file if ffmpeg fails
+        #     os.rename(temp_wav_path, file_path)
+        #     print("Warning: Could not convert to MP3, returning WAV file instead")
         
-        # Save the audio to the buffer in mp3 format
-        sf.write(audio_buffer, audio_samples, sample_rate, format="mp3")
-        
-        # Get the audio bytes from the buffer
-        audio_buffer.seek(0)
-        audio_bytes = audio_buffer.read()
-        
-        if save_to_file:
-            # Generate a unique filename
-            file_path = f"{uuid.uuid4()}.mp3"
-            
-            # Save the audio to a file
-            with open(file_path, "wb") as f:
-                f.write(audio_bytes)
-                
-            # Return the file path
-            return file_path
-        else:
-            # Create a file-like object from the audio bytes
-            audio_stream = io.BytesIO(audio_bytes)
-            
-            # Return the audio as a streaming response
-            return StreamingResponse(
-                audio_stream, 
-                media_type="audio/mpeg",
-                headers={"Content-Disposition": "attachment; filename=speech.mp3"}
-            )
+        return file_path
     except Exception as e:
         print(f"Error converting text to speech with StyleTTS2: {str(e)}")
+        # import traceback
+        # traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
-
-# def text_to_speech(request: TextToSpeechRequest, save_to_file: bool = False):
-#     try:
-#         # Generate audio from text
-#         print(f"Converting text to speech: {request.text}")
-#         print(f"Voice ID: {voice_id}")
-#         audio_generator = client_eleven.text_to_speech.convert(
-#             text=request.text,
-#             voice_id=voice_id,
-#             model_id="eleven_flash_v2_5",
-#             output_format="mp3_22050_32",
-#             voice_settings={"speed": 0.9, "stability": 0.45, "similarity_boost": 0.5}
-#         )
-        
-#         # Convert generator to bytes
-#         audio_bytes = b"".join(chunk for chunk in audio_generator)
-        
-#         if save_to_file:
-#             # Generate a unique filename
-#             file_path = f"{uuid.uuid4()}.mp3"
-            
-#             # Save the audio to a file
-#             with open(file_path, "wb") as f:
-#                 f.write(audio_bytes)
-                
-#             # Return the file path
-#             return file_path
-#         else:
-#             # Create a file-like object from the audio bytes
-#             audio_stream = io.BytesIO(audio_bytes)
-            
-#             # Return the audio as a streaming response
-#             return StreamingResponse(
-#                 audio_stream, 
-#                 media_type="audio/mpeg",
-#                 headers={"Content-Disposition": "attachment; filename=speech.mp3"}
-#             )
-#     except Exception as e:
-#         print(f"Error converting text to speech: {str(e)}")
-#         raise HTTPException(status_code=500, detail=str(e))
 
 def add_tiktok_emphasis(text):
     """Add TikTok-style emphasis to certain words"""
@@ -756,7 +603,6 @@ def add_tiktok_emphasis(text):
     ]
     
     # Randomly capitalize about 20% of emphasis candidates
-    import random
     for pattern, replacement in emphasis_patterns:
         if random.random() < 0.2:  # 20% chance to apply emphasis
             matches = re.findall(pattern, text, re.IGNORECASE)
@@ -820,7 +666,6 @@ def create_tiktok_style_video(video_path, audio_path, subtitles, output_path):
         # Create a list of repeated video clips
         video_clips = [video] * repeat_count
         # Concatenate the clips
-        from moviepy import concatenate_videoclips
         looped_video = concatenate_videoclips(video_clips)
         # Now use the looped video
         video = looped_video.subclipped(0, audio.duration)
@@ -846,7 +691,7 @@ def create_tiktok_style_video(video_path, audio_path, subtitles, output_path):
         
         txt_clip = TextClip(
             text=text,
-            font="Arial",
+            font="arial",
             font_size=70,
             color='white',
             stroke_color='black',
@@ -908,7 +753,7 @@ def get_supported_files(directory, extensions):
     return files
 
 def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR, 
-                 output_dir=DEFAULT_OUTPUT_DIR, process_matching_only=DEFAULT_PROCESS_MATCHING_ONLY):
+                 output_dir=DEFAULT_OUTPUT_DIR):
     """
     Process audio and video files to create TikTok-style videos with subtitles.
     
@@ -916,7 +761,6 @@ def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR,
         audio_dir (str): Directory containing audio files
         video_dir (str): Directory containing video files
         output_dir (str): Directory to save output videos
-        process_matching_only (bool): If True, only process files with matching names
     
     Returns:
         int: Number of videos processed
@@ -1011,6 +855,58 @@ def create_videos(audio_dir=DEFAULT_AUDIO_DIR, video_dir=DEFAULT_VIDEO_DIR,
     print(f"\nDone! {processed} TikTok-style videos were created in {output_dir}")
     return processed
 
+@app.post("/api/process-materials", response_model=dict)
+async def process_materials(
+    background_tasks: BackgroundTasks,
+    material_files: List[UploadFile] = File(...)
+):
+    # Generate a processing ID
+    processing_id = str(uuid.uuid4())
+    
+    # Save material files
+    saved_material_files = []
+    for file in material_files:
+        file_path = os.path.join(UPLOAD_DIR, file.filename)
+        with open(file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
+        saved_material_files.append(file_path)
+    
+    # Initialize processing task
+    processing_tasks[processing_id] = {
+        "processingId": processing_id,
+        "startTime": time.time(),
+        "files": saved_material_files,
+        "progress": 0,
+        "status": "Initializing...",
+        "complete": False
+    }
+    
+    # Start background task to process files
+    background_tasks.add_task(process_files_task, processing_id, saved_material_files)
+    
+    return {"processingId": processing_id}
+
+@app.get("/api/processing-status/{processing_id}")
+async def get_processing_status(processing_id: str):
+    """
+    Get the status of a processing task
+    """
+    if processing_id not in processing_tasks:
+        raise HTTPException(status_code=404, detail="Processing task not found")
+    
+    return processing_tasks[processing_id]
+@app.get("/api/videos", response_model=List[Video])
+async def list_videos():
+    """
+    List all available processed videos
+    """
+    return process_files([], [])
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy"}
+
 @app.post("/api/cleanup")
 async def cleanup_directories():
     """Clean up temporary directories: uploads, mp3s, and output_videos"""
@@ -1032,7 +928,6 @@ async def cleanup_directories():
                         if os.path.isfile(file):
                             os.remove(file)
                         elif os.path.isdir(file):
-                            import shutil
                             shutil.rmtree(file)
                     except Exception as e:
                         print(f"Error removing {file}: {e}")
@@ -1040,6 +935,10 @@ async def cleanup_directories():
         return {"status": "success", "message": "Directories cleaned up successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to clean up directories: {str(e)}")
-    
+
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    # uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    print("Starting web server")
+    # uvicorn.run("main:app", host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+    print("Ended web server")

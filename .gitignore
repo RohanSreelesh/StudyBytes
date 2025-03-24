@@ -38,11 +38,31 @@ __pycache__/
 *.py[cod]
 *$py.class
 venv/
+
+/.venv/*
+!/.venv/Lib
+/.venv/Lib/*
+!/.venv/Lib/site-packages
+/.venv/Lib/site-packages/*
+!/.venv/Lib/site-packages/styletts2
+/.venv/Lib/site-packages/styletts2/*
+!/.venv/Lib/site-packages/styletts2/tts.py
+!/.venv/Lib/site-packages/styletts2/Utils
+/.venv/Lib/site-packages/styletts2/Utils/*
+!/.venv/Lib/site-packages/styletts2/Utils/JDC
+/.venv/Lib/site-packages/styletts2/Utils/JDC/*
+!/.venv/Lib/site-packages/styletts2/Utils/JDC/bst.t7
+!/.venv/Lib/site-packages/styletts2/Utils/ASR
+/.venv/Lib/site-packages/styletts2/Utils/ASR/*
+!/.venv/Lib/site-packages/styletts2/Utils/ASR/epoch_00080.pth
+
+# Won't work:
+# .venv/*
+# !.venv/Lib/site-packages/styletts2/tts.py
+
 env/
 .env
 
 # Uploaded files
 /uploads/
 /backend/uploads/
-
-.venv

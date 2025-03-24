@@ -33,6 +33,8 @@ cd StudyBytes
 
 2. Setup a python virtual environment with Python 3.12
 
+Ideally it is named as ".venv"
+
 3. Setup and rename "backend/example.env" to "backend/.env"
 
 4. Install dependencies:
