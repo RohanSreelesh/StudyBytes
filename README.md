@@ -1,4 +1,4 @@
-# [https://devpost.com/software/studybytes](Devpost)
+# [Devpost](https://devpost.com/software/studybytes)
 
 # StudyBytes
 
@@ -69,7 +69,7 @@ cd backend
 py main.py
 ```
 
-6. Open [http://localhost:3000](http://localhost:3000) in your browser to see the application.
+6. Open [http://localhost:3000] in your browser to see the application.
 
 ## Tech Stack
 
